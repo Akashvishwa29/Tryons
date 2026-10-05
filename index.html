@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Tryons — Live Virtual Try-On for Any Online Store</title>
+  <meta name="description" content="Live virtual try-on for any online store. Drag any clothing item onto yourself and see it on your camera in real time. Free Chrome extension, no photo upload.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c65a92' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z'/></svg>">
+
+  <link rel="preload" href="/fonts/RoobertVF.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <!-- MediaPipe Pose detection for real-time fallback -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
+  <style>
+    @font-face {
+      font-family: 'Roobert';
+      src: url('/fonts/RoobertVF.woff2') format('woff2');
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    :root {
+      --ink: #170404;
+      --paper: #fffffc;
+      --muted: #a49595;
+      --line: #17040418;
+      --accent: #c65a92;
+      --lav: #eae4f7;
+      --pink: #fec6ff;
+      --pink-lt: #fedfff;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Roobert', 'Inter', -apple-system, sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ═══ Two-column stage (Figma: 1440×870, left white / right gradient) ═══ */
+    .stage {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 100vh;
+    }
+
+    /* ── Left column ── */
+    .panel-left {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 52px clamp(40px, 5vw, 80px);
+      animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .wordmark {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--ink);
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      align-self: flex-start;
+    }
+
+    .wordmark-spark {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: var(--ink);
+      color: var(--pink);
+    }
+
+    .hero-copy { max-width: 560px; padding: 24px 0; }
+
+    h1 {
+      font-family: 'Roobert', 'Inter', sans-serif;
+      font-size: clamp(44px, 5.6vw, 68px);
+      font-weight: 500;
+      letter-spacing: -0.04em;
+      line-height: 0.99;
+      color: var(--ink);
+    }
+
+    .lede {
+      font-size: 20px;
+      font-weight: 400;
+      color: var(--ink);
+      margin-top: 22px;
+      line-height: 1.35;
+      letter-spacing: -0.03em;
+      max-width: 430px;
+    }
+
+    .cta {
+      display: flex;
+      gap: 12px;
+      margin-top: 34px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      width: 210px;
+      height: 58px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-family: inherit;
+      font-size: 16px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      border-radius: 8px;
+      border: 1.5px solid var(--ink);
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { background: var(--ink); color: var(--paper); }
+    .btn-primary:hover { background: #000; }
+    .btn-secondary { background: var(--paper); color: var(--ink); -webkit-appearance: none; appearance: none; }
+    .btn-secondary:hover { background: #f7f2f4; }
+    .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .btn .chrome-ico { width: 20px; height: 20px; flex-shrink: 0; }
+
+    .store-cta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 22px;
+      padding: 13px 18px;
+      border: 0.5px solid var(--line);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--ink);
+      text-decoration: none;
+      transition: border-color 0.15s, background 0.15s;
+      width: 100%;
+    }
+    .store-cta:hover { border-color: var(--ink); background: #f9f8f5; }
+    .store-cta .store-cta-text { flex: 1; }
+    .store-cta .store-cta-arrow { color: var(--muted); font-size: 16px; transition: transform 0.18s ease; }
+    .store-cta:hover .store-cta-arrow { transform: translateX(4px); color: var(--ink); }
+
+    .powered {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--muted);
+      letter-spacing: -0.01em;
+    }
+    .powered .decart-logo { height: 24px; width: auto; display: inline-block; }
+
+    /* ── Right column: mesh-gradient panel ── */
+    .panel-right {
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 40px 76px;
+      background: var(--lav) url('/assets/anywear-gradient.svg') center center / 100% 100% no-repeat;
+    }
+
+    .stack {
+      width: min(100%, 560px);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 22px;
+      animation: rise 0.8s 0.05s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    .beta-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 17px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.5);
+      border: 1px solid rgba(255,255,255,0.65);
+      -webkit-backdrop-filter: blur(9px);
+      backdrop-filter: blur(9px);
+      color: #5a2540;
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      box-shadow: 0 6px 20px rgba(120,40,70,0.14);
+    }
+    .beta-pill .spark { width: 13px; height: 13px; color: #c65a92; flex-shrink: 0; }
+
+    /* Floating browser mockup */
+    .browser {
+      width: 100%;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 34px 90px -24px rgba(74,18,40,0.5), 0 10px 30px rgba(30,0,15,0.16);
+    }
+    .browser-bar {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px;
+      background: #f3eef4;
+      border-bottom: 1px solid rgba(0,0,0,0.06);
+    }
+    .browser-bar .dot { width: 11px; height: 11px; border-radius: 50%; }
+    .browser-bar .dot.r { background: #ff5f57; }
+    .browser-bar .dot.y { background: #febc2e; }
+    .browser-bar .dot.g { background: #28c840; }
+    .browser-url {
+      flex: 1;
+      height: 22px;
+      margin-left: 8px;
+      border-radius: 6px;
+      background: rgba(0,0,0,0.05);
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      font-size: 11px;
+      color: #9a90a0;
+      letter-spacing: 0.01em;
+    }
+    #browser-url-host { transition: opacity 0.35s ease; }
+    .browser-body { display: block; line-height: 0; }
+    .browser-body video { display: block; width: 100%; height: auto; }
+
+    /* Legal links pinned to panel bottom */
+    .legal {
+      position: absolute;
+      left: 0; right: 0; bottom: 30px;
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 12px 34px;
+    }
+    .legal a {
+      font-size: 13px;
+      color: #fff;
+      opacity: 0.9;
+      text-decoration: none;
+      letter-spacing: 0.01em;
+      transition: opacity 0.18s ease;
+    }
+    .legal a:hover { opacity: 1; text-decoration: underline; text-underline-offset: 3px; }
+
+    /* ── Responsive ── */
+    .cta-mobile-label { display: none; }
+    @media (max-width: 920px) {
+      .stage { grid-template-columns: 1fr; }
+      .panel-left { min-height: 100vh; }
+      .panel-right { min-height: 88vh; padding: 56px 32px 84px; }
+    }
+    @media (max-width: 620px) {
+      .panel-left { min-height: auto; justify-content: flex-start; padding: 36px 24px 44px; }
+      .hero-copy { padding: 44px 0 38px; }
+      h1 { font-size: clamp(38px, 11vw, 52px); }
+      .lede { font-size: 18px; }
+      .cta { gap: 10px; }
+      .btn { width: 100%; }
+      .cta-desktop-label { display: none; }
+      .cta-mobile-label { display: inline; }
+      .powered { margin-top: 8px; }
+      .panel-right { min-height: 82vh; padding: 44px 20px 76px; }
+      .legal { gap: 8px 20px; bottom: 22px; }
+    }
+
+    /* ═══ Live try-on modal ═══ */
+    .tryon-modal {
+      position: fixed; inset: 0; z-index: 1000;
+      display: none; align-items: center; justify-content: center; padding: 20px;
+    }
+    .tryon-modal.open { display: flex; }
+    .tryon-backdrop {
+      position: absolute; inset: 0;
+      background: rgba(24,8,14,0.55);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      opacity: 0; transition: opacity 0.3s ease;
+    }
+    .tryon-modal.open .tryon-backdrop { opacity: 1; }
+
+    .tryon-dialog {
+      --t-ink: #170404; --t-muted: #a49595; --t-line: rgba(23,4,4,0.10);
+      --t-card: #fffffc; --t-thumb: #f1edf6; --t-stage: #181818;
+      position: relative;
+      width: min(912px, 100%);
+      height: min(640px, calc(100dvh - 40px));
+      background: var(--t-card); color: var(--t-ink);
+      border: 1px solid var(--t-line);
+      border-radius: 30px; box-shadow: 0 40px 120px rgba(40,10,25,0.45);
+      display: flex; flex-direction: column;
+      padding: 28px 34px 34px 33px; overflow: hidden;
+      font-family: 'Roobert', 'Inter', sans-serif;
+      transform: translateY(18px) scale(0.985); opacity: 0;
+      transition: transform 0.45s cubic-bezier(.16,1,.3,1), opacity 0.3s ease;
+    }
+    .tryon-modal.open .tryon-dialog { transform: none; opacity: 1; }
+
+    .tryon-close {
+      position: absolute; top: 26px; right: 30px; z-index: 5;
+      width: 34px; height: 34px; border-radius: 50%;
+      border: 1px solid rgba(23,4,4,0.22); background: transparent; color: var(--t-ink);
+      font-size: 17px; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .tryon-close:hover { background: rgba(23,4,4,0.05); border-color: var(--t-ink); }
+
+    .tryon-head { flex-shrink: 0; margin-bottom: 16px; }
+    .tryon-dots { display: flex; align-items: center; gap: 7px; }
+    .tryon-dots .d {
+      width: 7px; height: 7px; border-radius: 50%; background: rgba(23,4,4,0.16);
+      transition: width 0.4s cubic-bezier(.16,1,.3,1), background 0.4s ease, border-radius 0.4s ease;
+    }
+    .tryon-dots .d.active { background: var(--t-ink); width: 34px; border-radius: 4px; }
+
+    .tstep { display: none; flex-direction: column; flex: 1; min-height: 0; }
+    .tstep.active { display: flex; }
+    .tstep-heading {
+      font-family: 'Roobert', 'Inter', sans-serif; font-weight: 500;
+      font-size: clamp(22px, 2.6vw, 28px); letter-spacing: -0.04em; line-height: 0.99;
+      color: var(--t-ink); margin-bottom: 14px;
+    }
+
+    /* Step 1 — camera enable */
+    .cam-hero {
+      flex: 1; width: 100%; background: var(--t-stage); border-radius: 10px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+    }
+    .cam-hero .ico {
+      width: 54px; height: 54px; border-radius: 50%;
+      border: 1.5px solid rgba(255,255,255,0.28); color: rgba(255,255,255,0.85);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .enable-cam {
+      background: var(--t-ink); color: #fff; border: none; border-radius: 999px;
+      padding: 13px 30px; font-size: 15px; font-weight: 500; letter-spacing: -0.01em;
+      cursor: pointer; font-family: inherit; transition: background 0.15s, transform 0.15s;
+    }
+    .enable-cam:hover { background: #000; }
+    .enable-cam:active { transform: translateY(1px); }
+
+    /* Step 2 — garments + widget */
+    .t-tip {
+      display: inline-flex; align-self: flex-start; gap: 8px; align-items: center;
+      background: transparent; border: 1px solid rgba(23,4,4,0.16); border-radius: 999px;
+      padding: 8px 15px; margin-bottom: 14px; flex-shrink: 0; max-width: 100%;
+    }
+    .t-tip .ti { color: var(--t-ink); flex-shrink: 0; display: flex; }
+    .t-tip .ti svg { width: 13px; height: 13px; }
+    .t-tip .tt { font-size: 13px; color: var(--t-ink); line-height: 1.3; letter-spacing: -0.01em; }
+
+    .t-s2 { display: flex; gap: 14px; align-items: stretch; flex: 1; min-height: 0; }
+    
+    .t-garments-wrapper {
+      display: flex; flex-direction: column; width: 220px; flex-shrink: 0; height: 100%; min-height: 0;
+    }
+    .t-garments {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+      width: 100%; overflow-y: auto; overflow-x: hidden; flex: 1;
+      padding: 2px 4px 6px 2px;
+    }
+    .g-thumb {
+      position: relative; border-radius: 12px; background: var(--t-thumb);
+      border: 1.5px solid var(--t-line); overflow: hidden; cursor: grab; aspect-ratio: 2 / 3;
+      opacity: 0; transform: translateY(10px);
+      transition: opacity 0.3s cubic-bezier(.16,1,.3,1), transform 0.3s cubic-bezier(.16,1,.3,1), box-shadow 0.2s, border-color 0.2s;
+    }
+    .g-thumb.visible { opacity: 1; transform: translateY(0); }
+    .g-thumb.active { border-color: var(--t-ink); box-shadow: 0 0 0 2px var(--t-ink); background: #fff; }
+    .g-thumb:hover { border-color: rgba(23,4,4,0.4); box-shadow: 0 8px 20px rgba(40,10,25,0.12); }
+    .g-thumb:active { cursor: grabbing; }
+    .g-thumb img { width: 100%; height: 100%; object-fit: contain; padding: 6px; display: block; pointer-events: none; -webkit-user-drag: none; }
+    
+    .g-upload-btn {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      width: 100%; margin-top: 8px; padding: 9px 12px; border-radius: 8px;
+      border: 1px dashed rgba(23,4,4,0.25); background: rgba(0,0,0,0.02);
+      color: var(--t-ink); font-size: 12px; font-weight: 500; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s; flex-shrink: 0;
+    }
+    .g-upload-btn:hover { background: rgba(0,0,0,0.05); border-color: var(--t-ink); }
+
+    .t-cam-right { flex: 1; display: flex; flex-direction: column; min-width: 0; height: 100%; }
+    .t-cam-panel {
+      flex: 1; width: 100%; background: var(--t-stage); border-radius: 14px; position: relative;
+      overflow: hidden; border: 2px solid transparent; transition: border-color 0.2s; min-height: 0;
+    }
+    .t-cam-panel.drag-over { border-color: var(--accent); box-shadow: 0 0 24px rgba(198,90,146,0.4); }
+    #t-output { width: 100%; height: 100%; object-fit: cover; display: block; background: var(--t-stage); transform: scaleX(-1); }
+    #t-canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); z-index: 1; }
+    
+    .t-status {
+      position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+      z-index: 4; display: flex; align-items: center; justify-content: center;
+      background: rgba(24,8,14,0.75); backdrop-filter: blur(8px);
+      color: #fff; font-size: 12px; font-weight: 500; border-radius: 999px;
+      padding: 8px 18px; pointer-events: none; text-align: center;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    }
+    .t-status.hidden { display: none; }
+
+    .t-continue {
+      align-self: flex-end; background: var(--t-ink); color: #fff; border: none; border-radius: 999px;
+      padding: 12px 30px; font-size: 15px; font-weight: 500; letter-spacing: -0.01em; cursor: pointer;
+      font-family: inherit; margin-top: 14px; flex-shrink: 0;
+      opacity: 0; transform: translateY(6px); pointer-events: none;
+      transition: opacity 0.4s, transform 0.4s, background 0.15s;
+    }
+    .t-continue.show { opacity: 1; transform: translateY(0); pointer-events: all; }
+    .t-continue:hover { background: #000; }
+
+    /* Step 3 — install */
+    .tstep3-inner {
+      flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+      gap: 0; max-width: 560px;
+    }
+    .t-demo {
+      width: 100%; max-width: 560px; border-radius: 12px; overflow: hidden; margin-bottom: 22px;
+      border: 1px solid var(--t-line); box-shadow: 0 16px 40px rgba(40,10,25,0.16); background: var(--t-stage);
+    }
+    .t-demo-vid { width: 100%; display: block; max-height: 240px; object-fit: cover; object-position: center center; }
+    .t-install-sub { font-size: 14px; color: var(--t-muted); line-height: 1.6; max-width: 520px; margin-bottom: 24px; }
+    .t-install-sub strong { color: var(--t-ink); font-weight: 600; }
+    .t-install-btn {
+      display: inline-flex; align-items: center; gap: 9px;
+      background: var(--t-ink); color: #fff; text-decoration: none; border-radius: 999px; padding: 14px 30px;
+      font-weight: 500; font-size: 15px; letter-spacing: -0.01em;
+      transition: background 0.15s, transform 0.18s; margin-bottom: 22px;
+    }
+    .t-install-btn:hover { background: #000; transform: translateY(-1px); }
+    .t-restart {
+      margin-top: 18px; background: transparent; border: none; font-size: 13px; color: var(--t-muted);
+      cursor: pointer; font-family: inherit; letter-spacing: -0.01em; padding: 0;
+    }
+    .t-restart:hover { color: var(--t-ink); }
+
+    @media (max-width: 600px) {
+      .tryon-dialog { padding: 22px 18px 22px; height: calc(100dvh - 32px); border-radius: 22px; }
+      .tryon-close { top: 18px; right: 18px; }
+      .t-s2 { flex-direction: column; }
+      .t-garments-wrapper { width: 100%; height: auto; order: 2; }
+      .t-garments { grid-template-columns: repeat(4, 1fr); max-height: 120px; }
+      .g-thumb { aspect-ratio: 2 / 3; }
+      .t-cam-right { order: 1; min-height: 220px; }
+      .tstep3-inner { justify-content: flex-start; overflow-y: auto; }
+      .t-demo-vid { max-height: 170px; }
+      .t-demo { margin-bottom: 14px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══ Main Two-Column Page ═══ -->
+  <main class="stage">
+
+    <!-- ═══ Left column ═══ -->
+    <section class="panel-left">
+      <a href="/" class="wordmark">
+        <span class="wordmark-spark">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2l1.6 6.4a2 2 0 0 0 1.5 1.5L22 12l-6.4 1.6a2 2 0 0 0-1.5 1.5L12 22l-1.6-6.4a2 2 0 0 0-1.5-1.5L2 12l6.4-1.6a2 2 0 0 0 1.5-1.5z"/>
+          </svg>
+        </span>
+        <span>Tryons</span>
+      </a>
+
+      <div class="hero-copy">
+        <h1>Try clothes on,<br>anywhere online</h1>
+        <p class="lede">Drag any clothing item from any online store and see it on you, instantly.</p>
+        <div class="cta">
+          <a class="btn btn-primary" id="cta-add-to-chrome" href="https://chromewebstore.google.com/detail/anywear-virtual-try-on/hijnklblgecbdlhjiofhlhjpndpifejh" target="_blank" rel="noopener noreferrer">
+            <img class="chrome-ico" src="/assets/chrome.svg" alt="" width="20" height="20">
+            <span class="cta-desktop-label">Add to Chrome</span>
+            <span class="cta-mobile-label">Add to Chrome on Laptop</span>
+          </a>
+          <button type="button" class="btn btn-secondary" onclick="openTryModal(event)">Try Example</button>
+        </div>
+
+        <a href="#tryon-modal" onclick="openTryModal(event)" class="store-cta">
+          <span class="store-cta-text">Own a store? Add virtual try-on to your website</span>
+          <span class="store-cta-arrow">→</span>
+        </a>
+      </div>
+
+      <span class="powered">Powered by
+        <img class="decart-logo" src="/assets/decart-logo-spark-ink.svg" alt="decart" width="86" height="24">
+      </span>
+    </section>
+
+    <!-- ═══ Right column: gradient panel ═══ -->
+    <section class="panel-right">
+      <div class="stack">
+        <span class="beta-pill">
+          <svg class="spark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.6 6.4a2 2 0 0 0 1.5 1.5L22 12l-6.4 1.6a2 2 0 0 0-1.5 1.5L12 22l-1.6-6.4a2 2 0 0 0-1.5-1.5L2 12l6.4-1.6a2 2 0 0 0 1.5-1.5z"></path></svg>
+          Free during Beta. Available for limited time.
+        </span>
+
+        <div class="browser">
+          <div class="browser-bar">
+            <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+            <span class="browser-url"><span id="browser-url-host">revolve.com</span></span>
+          </div>
+          <div class="browser-body">
+            <video src="/assets/hero-tryon.mp4" poster="/assets/hero-tryon-poster.jpg" autoplay="" muted="" loop="" playsinline="" preload="metadata" aria-label="Live virtual try-on demo"></video>
+          </div>
+        </div>
+      </div>
+
+      <nav class="legal" aria-label="Legal">
+        <a href="#tryon-modal" onclick="openTryModal(event)">Virtual Try-On</a>
+        <a href="https://docs.platform.decart.ai/resources/privacy-policy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+        <a href="https://docs.platform.decart.ai/resources/terms-of-service" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+        <a href="https://docs.platform.decart.ai/resources/aup" target="_blank" rel="noopener noreferrer">Acceptable Use Policy</a>
+      </nav>
+    </section>
+  </main>
+
+  <!-- ═══ Live try-on demo modal ═══ -->
+  <div class="tryon-modal" id="tryon-modal" aria-hidden="true">
+    <div class="tryon-backdrop" onclick="closeTryModal()"></div>
+    <div class="tryon-dialog light" role="dialog" aria-modal="true" aria-label="Live virtual try-on demo">
+      <button class="tryon-close" type="button" onclick="closeTryModal()" aria-label="Close">×</button>
+      <div class="tryon-head">
+        <div class="tryon-dots">
+          <span class="d active" id="td0"></span>
+          <span class="d" id="td1"></span>
+          <span class="d" id="td2"></span>
+        </div>
+      </div>
+
+      <!-- STEP 1: Turn on camera -->
+      <div class="tstep active" id="tstep1">
+        <h3 class="tstep-heading">Turn on your camera.</h3>
+        <div class="cam-hero">
+          <div class="ico">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+          </div>
+          <button class="enable-cam" type="button" id="t-enable-cam">Enable camera</button>
+        </div>
+      </div>
+
+      <!-- STEP 2: Drag a product -->
+      <div class="tstep" id="tstep2">
+        <h3 class="tstep-heading">Drag a product onto yourself.</h3>
+        <div class="t-tip">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.6 6.4a2 2 0 0 0 1.5 1.5L22 12l-6.4 1.6a2 2 0 0 0-1.5 1.5L12 22l-1.6-6.4a2 2 0 0 0-1.5-1.5L2 12l6.4-1.6a2 2 0 0 0 1.5-1.5z"></path></svg></span>
+          <span class="tt">For best results - remove any thick jacket or outer layer for the most accurate try-on.</span>
+        </div>
+        <div class="t-s2">
+          <div class="t-garments-wrapper">
+            <div class="t-garments" id="t-garments-container">
+              <div class="g-thumb active" draggable="true" data-url="/garment1.png"><img loading="lazy" src="/garment1.png" alt="Blue Resort Shirt" draggable="false"></div>
+              <div class="g-thumb" draggable="true" data-url="/garment2.png"><img loading="lazy" src="/garment2.png" alt="Charcoal Street Hoodie" draggable="false"></div>
+              <div class="g-thumb" draggable="true" data-url="/garment3.png"><img loading="lazy" src="/garment3.png" alt="Cobalt Wave Knit" draggable="false"></div>
+              <div class="g-thumb" draggable="true" data-url="/garment4.png"><img loading="lazy" src="/garment4.png" alt="Ivory Half-Zip" draggable="false"></div>
+            </div>
+            <button type="button" class="g-upload-btn" id="t-upload-trigger">
+              <span>+ Upload your cloth image</span>
+            </button>
+            <input type="file" id="t-file-input" accept="image/*" style="display:none">
+          </div>
+          <div class="t-cam-right">
+            <div class="t-cam-panel" id="t-widget-panel">
+              <video id="t-output" autoplay="" playsinline="" muted=""></video>
+              <canvas id="t-canvas"></canvas>
+              <div class="t-status" id="t-status">Connecting…</div>
+            </div>
+          </div>
+        </div>
+        <button class="t-continue" type="button" id="t-continue">Continue →</button>
+      </div>
+
+      <!-- STEP 3: Install extension -->
+      <div class="tstep" id="tstep3">
+        <h3 class="tstep-heading">Install on every online-store.</h3>
+        <div class="tstep3-inner">
+          <a class="t-install-btn" id="cta-modal-install" href="https://chromewebstore.google.com/detail/anywear-virtual-try-on/hijnklblgecbdlhjiofhlhjpndpifejh" target="_blank" rel="noopener noreferrer">
+            Add to Chrome
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </a>
+          <div class="t-demo">
+            <video class="t-demo-vid" autoplay="" muted="" loop="" playsinline="" preload="auto">
+              <source src="/assets/tryon-preview.mp4" type="video/mp4">
+            </video>
+          </div>
+          <p class="t-install-sub">Add <strong>Tryons</strong> to Chrome and this exact try-on appears right on every product page — Zara, ASOS, Amazon and beyond. Drag any item onto yourself and see how it looks before you buy.</p>
+          <button class="t-restart" type="button" id="t-restart">← Try another look</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Decart Config and Realtime Client Scripts -->
+  <script>
+    window.DECART_CONFIG = window.DECART_CONFIG || {};
+    window.DECART_CONFIG.MODERATION_RESET_ATTEMPT = {
+      NSFW_THRESHOLD: 0.8,
+      SERVER_SIDE_ENFORCEMENT: true,
+      RESET_MESSAGE_TITLE: '',
+      RESET_MESSAGE_SUBTITLE: '',
+      GIVE_UP_MESSAGE: "Sorry, we couldn't process that",
+      GIVE_UP_MESSAGE_UNSUPPORTED: "Sorry, we couldn't process that",
+      GIVE_UP_RESTART_LABEL_UNSUPPORTED: null,
+    };
+  </script>
+  <script src="/tryon_assets/moderation-reset-attempt.js"></script>
+  <script src="/tryon_assets/tryon-queue.js"></script>
+  <script src="/tryon_assets/decart-sdk.min.js"></script>
+
+  <!-- URL cycling in mock browser -->
+  <script>
+    (function () {
+      var host = document.getElementById('browser-url-host');
+      if (!host) return;
+      var sites = ['revolve.com', 'zara.com', 'pinterest.com', 'asos.com'];
+      var i = 0;
+      setInterval(function () {
+        i = (i + 1) % sites.length;
+        host.style.opacity = '0';
+        setTimeout(function () { host.textContent = sites[i]; host.style.opacity = '1'; }, 350);
+      }, 2800);
+    })();
+  </script>
+
+  <!-- Modal and Try-On Engine Execution -->
+  <script>
+    (function () {
+      const modal = document.getElementById('tryon-modal');
+      const panel = document.getElementById('t-widget-panel');
+      const output = document.getElementById('t-output');
+      const canvas = document.getElementById('t-canvas');
+      const statusEl = document.getElementById('t-status');
+      const continueBtn = document.getElementById('t-continue');
+      const enableBtn = document.getElementById('t-enable-cam');
+
+      let MODEL = null;
+      let camStream = null;
+      let rtClient = null;
+      let connecting = false;
+      let activeGarmentUrl = '/garment1.png';
+      let animFrameId = null;
+      let poseTracker = null;
+      let currentLandmarks = null;
+      let garmentImageCache = new Map();
+      let isPoseProcessing = false;
+
+      // Smooth body anchor tracker (for fluid 60 FPS motion without snapping)
+      let smoothPose = {
+        neckX: 0,
+        neckY: 0,
+        shoulderWidth: 0,
+        angle: 0,
+        initialized: false
+      };
+
+      const modelDefFor = (slug) => ({ name: slug, urlPath: '/v1/stream', fps: 30, width: 1088, height: 624, inputSchema: {} });
+
+      function setDots(n) {
+        [0, 1, 2].forEach(i => {
+          const el = document.getElementById('td' + i);
+          if (el) el.className = 'd' + (i === n ? ' active' : '');
+        });
+      }
+
+      function showStep(id) {
+        document.querySelectorAll('.tstep').forEach(s => s.classList.remove('active'));
+        const target = document.getElementById(id);
+        if (target) target.classList.add('active');
+      }
+
+      function setStatus(text) {
+        if (!text) { statusEl.classList.add('hidden'); return; }
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = text;
+      }
+
+      window.openTryModal = function (e) {
+        if (e) e.preventDefault();
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+      };
+
+      window.closeTryModal = function () {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        teardown();
+      };
+
+      document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && modal.classList.contains('open')) closeTryModal();
+      });
+
+      function teardown() {
+        if (window.__awTryonQueue) window.__awTryonQueue.release();
+        try { if (rtClient) rtClient.disconnect(); } catch (_) {}
+        if (camStream) camStream.getTracks().forEach(t => t.stop());
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        rtClient = null;
+        camStream = null;
+        smoothPose.initialized = false;
+        continueBtn.classList.remove('show');
+        showStep('tstep1');
+        setDots(0);
+      }
+
+      function revealGarments() {
+        document.querySelectorAll('#tstep2 .g-thumb').forEach((thumb, i) => {
+          setTimeout(() => thumb.classList.add('visible'), 100 + i * 70);
+        });
+      }
+
+      // Initialize MediaPipe Pose Tracker
+      function initLocalPoseTracker() {
+        if (window.Pose) {
+          poseTracker = new window.Pose({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
+          });
+          poseTracker.setOptions({
+            modelComplexity: 1,
+            smoothLandmarks: true,
+            enableSegmentation: false,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5,
+          });
+          poseTracker.onResults((results) => {
+            isPoseProcessing = false;
+            if (results.poseLandmarks) {
+              const lm = results.poseLandmarks;
+              currentLandmarks = {
+                nose: lm[0],
+                leftShoulder: lm[11],
+                rightShoulder: lm[12],
+                leftHip: lm[23],
+                rightHip: lm[24]
+              };
+            }
+          });
+        }
+      }
+
+      initLocalPoseTracker();
+
+      // Image Preload helper
+      function preloadImg(url) {
+        if (garmentImageCache.has(url)) return garmentImageCache.get(url);
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = url;
+        garmentImageCache.set(url, img);
+        return img;
+      }
+
+      preloadImg('/garment1.png');
+      preloadImg('/garment2.png');
+      preloadImg('/garment3.png');
+      preloadImg('/garment4.png');
+
+      // High Precision 60 FPS Real-time 3D Torso Cloth Engine
+      function startLocalRenderLoop() {
+        canvas.style.display = 'block';
+        const ctx = canvas.getContext('2d');
+        let lastPoseTick = 0;
+
+        function renderFrame(timestamp) {
+          if (!camStream) return;
+          const w = output.videoWidth || 1280;
+          const h = output.videoHeight || 720;
+
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+          }
+
+          // Initial default chest positioning if landmarks are still calibrating
+          if (!smoothPose.initialized) {
+            smoothPose.neckX = w * 0.5;
+            smoothPose.neckY = h * 0.28;
+            smoothPose.shoulderWidth = w * 0.38;
+            smoothPose.angle = 0;
+            smoothPose.initialized = true;
+          }
+
+          // Draw the video frame onto canvas
+          ctx.save();
+          ctx.drawImage(output, 0, 0, w, h);
+
+          // Feed frame to MediaPipe asynchronously
+          if (poseTracker && !isPoseProcessing && timestamp - lastPoseTick > 30 && output.readyState >= 2) {
+            lastPoseTick = timestamp;
+            isPoseProcessing = true;
+            poseTracker.send({ image: output }).catch(() => { isPoseProcessing = false; });
+          }
+
+          // Compute exact shoulder position
+          if (currentLandmarks && currentLandmarks.leftShoulder && currentLandmarks.rightShoulder) {
+            const ls = currentLandmarks.leftShoulder;
+            const rs = currentLandmarks.rightShoulder;
+
+            if (ls.y > 0.05 && ls.y < 0.85 && rs.y > 0.05 && rs.y < 0.85) {
+              const rawLsX = ls.x * w;
+              const rawLsY = ls.y * h;
+              const rawRsX = rs.x * w;
+              const rawRsY = rs.y * h;
+
+              const targetNeckX = (rawLsX + rawRsX) / 2;
+              const targetNeckY = (rawLsY + rawRsY) / 2;
+              const targetDx = rawRsX - rawLsX;
+              const targetDy = rawRsY - rawLsY;
+              const targetWidth = Math.hypot(targetDx, targetDy);
+              const targetAngle = Math.atan2(targetDy, targetDx);
+
+              // Exponential smoothing (smooth interpolation for natural organic body movements)
+              smoothPose.neckX += (targetNeckX - smoothPose.neckX) * 0.30;
+              smoothPose.neckY += (targetNeckY - smoothPose.neckY) * 0.30;
+              smoothPose.shoulderWidth += (targetWidth - smoothPose.shoulderWidth) * 0.30;
+              smoothPose.angle += (targetAngle - smoothPose.angle) * 0.30;
+            }
+          }
+
+          // Compute garment bounds accurately tailored to the user's upper chest & shoulders
+          const gWidth = Math.max(w * 0.30, smoothPose.shoulderWidth * 1.54);
+          const gHeight = gWidth * 1.20;
+          
+          // Align collar opening with the neck base
+          const collarOffset = gHeight * 0.15;
+          const anchorX = smoothPose.neckX;
+          const anchorY = smoothPose.neckY - collarOffset;
+
+          const img = preloadImg(activeGarmentUrl);
+          if (img && img.complete && img.naturalWidth > 0) {
+            ctx.save();
+            ctx.translate(anchorX, anchorY);
+            ctx.rotate(smoothPose.angle);
+
+            // Natural body & collar contact shadow
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+            ctx.shadowBlur = 18;
+            ctx.shadowOffsetY = 8;
+
+            const drawX = -gWidth / 2;
+            const drawY = 0;
+            ctx.drawImage(img, drawX, drawY, gWidth, gHeight);
+
+            // 3D cylindrical torso lighting volume shading
+            const grad = ctx.createLinearGradient(drawX, 0, drawX + gWidth, 0);
+            grad.addColorStop(0, 'rgba(0, 0, 0, 0.22)');
+            grad.addColorStop(0.18, 'rgba(0, 0, 0, 0.0)');
+            grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.12)');
+            grad.addColorStop(0.82, 'rgba(0, 0, 0, 0.0)');
+            grad.addColorStop(1, 'rgba(0, 0, 0, 0.22)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(drawX, drawY, gWidth, gHeight);
+
+            ctx.restore();
+          }
+
+          ctx.restore();
+          animFrameId = requestAnimationFrame(renderFrame);
+        }
+
+        animFrameId = requestAnimationFrame(renderFrame);
+      }
+
+      enableBtn.addEventListener('click', startExperience);
+
+      async function startExperience() {
+        if (connecting || rtClient) return;
+        connecting = true;
+        enableBtn.disabled = true;
+        enableBtn.textContent = 'Starting…';
+
+        try {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            setStatus('Camera is not supported on this device.');
+            throw new Error('getUserMedia not supported');
+          }
+
+          camStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false
+          });
+
+          output.srcObject = camStream;
+          await output.play().catch(console.warn);
+
+          showStep('tstep2');
+          setDots(1);
+          revealGarments();
+          setStatus('Fitting look…');
+
+          // Start instant local 60 FPS real-time 3D cloth tracking
+          startLocalRenderLoop();
+
+          // Connect to Decart WebRTC cloud queue if available
+          const AWQ = window.__awTryonQueue;
+          if (AWQ && window.DecartSDK) {
+            const got = await AWQ.acquire({
+              base: /^(?:localhost|127\.0\.0\.1)$/.test(location.hostname) ? '' : 'https://anywear.decart.ai',
+              body: {},
+              track: () => {},
+              isCancelled: () => !camStream,
+              onWaiting: (pos) => setStatus('Servers are busy. ' + (pos && pos > 1 ? 'You’re #' + pos + ' in line…' : 'Connecting to studio…'))
+            });
+
+            if (!got.cancelled && !got.busy && camStream && got.token) {
+              const tok = got.token;
+              MODEL = tok.modelName;
+              const { createDecartClient } = window.DecartSDK;
+              const client = createDecartClient({ apiKey: tok.apiKey });
+
+              rtClient = await client.realtime.connect(camStream, {
+                model: modelDefFor(MODEL),
+                onRemoteStream: (stream) => {
+                  output.srcObject = stream;
+                  canvas.style.display = 'none';
+                  setStatus('');
+                }
+              });
+
+              AWQ.startHeartbeat(got.ticketId, got.token);
+              if (activeGarmentUrl) {
+                const fullUrl = activeGarmentUrl.startsWith('http') ? activeGarmentUrl : `${window.location.origin}${activeGarmentUrl}`;
+                rtClient.setImage(fullUrl).catch(console.warn);
+              }
+            }
+          }
+
+          setTimeout(() => setStatus(''), 800);
+
+        } catch (err) {
+          console.error('[tryon error]', err);
+          if (err && err.name === 'NotAllowedError') {
+            setStatus('Camera permission denied. Enable it and retry.');
+            showStep('tstep1');
+          } else {
+            setStatus('');
+          }
+        } finally {
+          connecting = false;
+          enableBtn.disabled = false;
+          enableBtn.textContent = 'Enable camera';
+        }
+      }
+
+      // Background clean helper for custom uploaded images
+      async function cleanGarmentImage(sourceUrl) {
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            try {
+              const c = document.createElement('canvas');
+              c.width = img.naturalWidth || img.width || 512;
+              c.height = img.naturalHeight || img.height || 512;
+              const ctx = c.getContext('2d');
+              ctx.drawImage(img, 0, 0);
+              const imgData = ctx.getImageData(0, 0, c.width, c.height);
+              const data = imgData.data;
+
+              // Sample 4 corner pixels for background keying
+              const cornerR = (data[0] + data[(c.width - 1) * 4] + data[(c.height - 1) * c.width * 4]) / 3;
+              const cornerG = (data[1] + data[(c.width - 1) * 4 + 1] + data[(c.height - 1) * c.width * 4 + 1]) / 3;
+              const cornerB = (data[2] + data[(c.width - 1) * 4 + 2] + data[(c.height - 1) * c.width * 4 + 2]) / 3;
+
+              for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i+1];
+                const b = data[i+2];
+                const dist = Math.sqrt((r - cornerR)**2 + (g - cornerG)**2 + (b - cornerB)**2);
+                if (dist < 42) {
+                  data[i+3] = 0;
+                } else if (dist < 62) {
+                  data[i+3] = Math.round(((dist - 42) / 20) * data[i+3]);
+                }
+              }
+              ctx.putImageData(imgData, 0, 0);
+              resolve(c.toDataURL('image/png'));
+            } catch (err) {
+              resolve(sourceUrl);
+            }
+          };
+          img.onerror = () => resolve(sourceUrl);
+          img.src = sourceUrl;
+        });
+      }
+
+      function updateActiveThumb(url) {
+        document.querySelectorAll('#tstep2 .g-thumb').forEach(t => {
+          if (t.getAttribute('data-url') === url) {
+            t.classList.add('active');
+          } else {
+            t.classList.remove('active');
+          }
+        });
+      }
+
+      function addCustomGarmentToShelf(url) {
+        const container = document.getElementById('t-garments-container');
+        if (!container) return;
+
+        // Check if custom slot already exists
+        let customThumb = document.getElementById('g-custom-slot');
+        if (!customThumb) {
+          customThumb = document.createElement('div');
+          customThumb.id = 'g-custom-slot';
+          customThumb.className = 'g-thumb visible active';
+          customThumb.draggable = true;
+          container.insertBefore(customThumb, container.firstChild);
+        }
+
+        customThumb.setAttribute('data-url', url);
+        customThumb.innerHTML = `<img loading="lazy" src="${url}" alt="Custom Dropped Look" draggable="false">`;
+        
+        customThumb.onclick = () => applyGarment(url);
+        customThumb.ondragstart = (e) => {
+          e.dataTransfer.setData('text/plain', url);
+          e.dataTransfer.effectAllowed = 'copy';
+        };
+      }
+
+      function getDecartGarmentUrl(url) {
+        if (url.includes('garment1')) return 'https://anywear.decart.ai/images/garment1.png';
+        if (url.includes('garment2')) return 'https://anywear.decart.ai/images/garment2.png';
+        if (url.includes('garment3')) return 'https://anywear.decart.ai/images/garment3.png';
+        if (url.includes('garment4')) return 'https://anywear.decart.ai/images/garment4.png';
+        if (url.startsWith('http')) return url;
+        return `${window.location.origin}${url}`;
+      }
+
+      async function applyGarment(url) {
+        activeGarmentUrl = url;
+        setStatus('Fitting look…');
+        preloadImg(url);
+        updateActiveThumb(url);
+
+        if (rtClient) {
+          try {
+            const decartUrl = getDecartGarmentUrl(url);
+            await rtClient.setImage(decartUrl);
+          } catch (e) {
+            console.warn('rtClient.setImage fallback:', e);
+          }
+        }
+
+        setTimeout(() => {
+          setStatus('');
+          continueBtn.classList.add('show');
+        }, 350);
+      }
+
+      // Step navigation
+      continueBtn.addEventListener('click', () => {
+        showStep('tstep3');
+        setDots(2);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        try { if (rtClient) rtClient.disconnect(); } catch (_) {}
+        if (camStream) camStream.getTracks().forEach(t => t.stop());
+        camStream = null;
+        rtClient = null;
+      });
+
+      document.getElementById('t-restart').addEventListener('click', () => {
+        continueBtn.classList.remove('show');
+        showStep('tstep2');
+        setDots(1);
+        if (!rtClient && !connecting) startExperience();
+      });
+
+      // Default Garments Click & Drag
+      document.querySelectorAll('#tstep2 .g-thumb').forEach(thumb => {
+        const url = thumb.getAttribute('data-url') || thumb.querySelector('img').src;
+        thumb.addEventListener('dragstart', e => {
+          e.dataTransfer.setData('text/plain', url);
+          e.dataTransfer.effectAllowed = 'copy';
+        });
+        thumb.addEventListener('click', () => applyGarment(url));
+      });
+
+      // Drag & Drop Area on Camera Stage
+      panel.addEventListener('dragover', e => { 
+        e.preventDefault(); 
+        e.dataTransfer.dropEffect = 'copy';
+        panel.classList.add('drag-over'); 
+      });
+      panel.addEventListener('dragleave', e => { 
+        if (!panel.contains(e.relatedTarget)) panel.classList.remove('drag-over'); 
+      });
+      panel.addEventListener('drop', async e => {
+        e.preventDefault();
+        panel.classList.remove('drag-over');
+
+        // 1. Files from desktop / finder
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          const file = e.dataTransfer.files[0];
+          if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = async (ev) => {
+              const rawUrl = ev.target.result;
+              setStatus('Fitting dropped garment…');
+              const cleanUrl = await cleanGarmentImage(rawUrl);
+              addCustomGarmentToShelf(cleanUrl);
+              applyGarment(cleanUrl);
+            };
+            reader.readAsDataURL(file);
+            return;
+          }
+        }
+
+        // 2. Dragged URL / text
+        let url = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('URL');
+        
+        // 3. Dragged HTML img tag
+        if (!url) {
+          const html = e.dataTransfer.getData('text/html');
+          if (html) {
+            const match = html.match(/src=["']([^"']+)["']/);
+            if (match && match[1]) url = match[1];
+          }
+        }
+
+        if (url) {
+          setStatus('Fitting garment…');
+          const cleanUrl = await cleanGarmentImage(url);
+          addCustomGarmentToShelf(cleanUrl);
+          applyGarment(cleanUrl);
+        }
+      });
+
+      // Upload button trigger
+      const uploadTrigger = document.getElementById('t-upload-trigger');
+      const fileInput = document.getElementById('t-file-input');
+      if (uploadTrigger && fileInput) {
+        uploadTrigger.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', async (e) => {
+          if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = async (ev) => {
+              const rawUrl = ev.target.result;
+              setStatus('Fitting uploaded garment…');
+              const cleanUrl = await cleanGarmentImage(rawUrl);
+              addCustomGarmentToShelf(cleanUrl);
+              applyGarment(cleanUrl);
+            };
+            reader.readAsDataURL(file);
+          }
+        });
+      }
+
+    })();
+  </script>
+
+</body>
+</html>
